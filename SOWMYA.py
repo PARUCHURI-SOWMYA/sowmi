@@ -1,39 +1,48 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import IsolationForest
 import plotly.express as px
 
-# Title
-st.title("🛡️ Dark Tracer: Malware Activity Detection")
+# App Title
+st.title("🛡️ Dark Tracer: Malware Activity Detection Framework")
 st.write("Detect anomalous spatiotemporal patterns in your data.")
 
-# Sidebar for file upload
-uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+# Sidebar for File Upload
+uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
 
-# Set anomaly detection parameters
-contamination = st.sidebar.slider("Anomaly Fraction", 0.01, 0.5, 0.1)
-n_estimators = st.sidebar.slider("Estimators", 50, 500, 100)
+# Sidebar for Parameters
+z_score_threshold = st.sidebar.slider("Z-Score Threshold for Anomaly", 2.0, 5.0, 3.0)
 
 if uploaded_file:
     try:
-        # Load and display data
+        # Load and Display Data
         data = pd.read_csv(uploaded_file)
         st.write("### Uploaded Data")
         st.dataframe(data.head())
 
-        # Ensure required columns exist
+        # Validate Required Columns
         if {'timestamp', 'latitude', 'longitude'}.issubset(data.columns):
-            data['timestamp'] = pd.to_datetime(data['timestamp'])
+            data['timestamp'] = pd.to_datetime(data['timestamp'])  # Convert to datetime
+            data['hour'] = data['timestamp'].dt.hour  # Extract hour for anomaly detection
 
-            # Anomaly detection
-            data['hour'] = data['timestamp'].dt.hour
-            features = data[['latitude', 'longitude', 'hour']]
-            model = IsolationForest(n_estimators=n_estimators, contamination=contamination, random_state=42)
-            data['anomaly'] = model.fit_predict(features)
-            data['anomaly'] = data['anomaly'].apply(lambda x: 'Anomalous' if x == -1 else 'Normal')
+            # Calculate Z-scores for the latitude, longitude, and hour
+            data['latitude_zscore'] = (data['latitude'] - data['latitude'].mean()) / data['latitude'].std()
+            data['longitude_zscore'] = (data['longitude'] - data['longitude'].mean()) / data['longitude'].std()
+            data['hour_zscore'] = (data['hour'] - data['hour'].mean()) / data['hour'].std()
 
-            # Visualize anomalies
+            # Define anomalies based on the Z-score threshold
+            data['anomaly'] = np.where(
+                (data['latitude_zscore'].abs() > z_score_threshold) |
+                (data['longitude_zscore'].abs() > z_score_threshold) |
+                (data['hour_zscore'].abs() > z_score_threshold),
+                'Anomalous', 'Normal'
+            )
+
+            # Display Anomaly Counts
+            st.write("### Anomaly Counts")
+            st.bar_chart(data['anomaly'].value_counts())
+
+            # Visualize Anomalies on Map
             anomalies = data[data['anomaly'] == 'Anomalous']
             fig = px.scatter_mapbox(
                 anomalies,
@@ -46,15 +55,22 @@ if uploaded_file:
             )
             st.plotly_chart(fig)
 
-            # Export processed data
+            # Download Processed Data
             csv_data = data.to_csv(index=False).encode('utf-8')
-            st.sidebar.download_button("Download Processed Data", csv_data, "processed_data.csv", "text/csv")
-
+            st.sidebar.download_button(
+                label="Download Processed Data",
+                data=csv_data,
+                file_name="processed_data.csv",
+                mime="text/csv"
+            )
         else:
-            st.error("Data must include 'timestamp', 'latitude', and 'longitude' columns.")
+            st.error("The uploaded file must contain 'timestamp', 'latitude', and 'longitude' columns.")
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
 
 else:
-    st.info("Upload a dataset to begin.")
+    st.info("Please upload a dataset to start analyzing.")
+
+# Footer
+st.sidebar.info("Powered by Streamlit")
