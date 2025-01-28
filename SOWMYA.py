@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 
 # App Title
 st.title("🛡️ Dark Tracer: Malware Activity Detection Framework")
@@ -42,18 +41,10 @@ if uploaded_file:
             st.write("### Anomaly Counts")
             st.bar_chart(data['anomaly'].value_counts())
 
-            # Visualize Anomalies on Map
+            # Visualize Anomalies on Map using Streamlit's built-in map
             anomalies = data[data['anomaly'] == 'Anomalous']
-            fig = px.scatter_mapbox(
-                anomalies,
-                lat="latitude",
-                lon="longitude",
-                color="anomaly",
-                hover_data=["timestamp"],
-                title="Detected Anomalies",
-                mapbox_style="open-street-map"
-            )
-            st.plotly_chart(fig)
+            st.write("### Anomalous Data Points on Map")
+            st.map(anomalies[['latitude', 'longitude']])
 
             # Download Processed Data
             csv_data = data.to_csv(index=False).encode('utf-8')
