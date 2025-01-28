@@ -2,96 +2,59 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import IsolationForest
-import matplotlib.pyplot as plt
 import plotly.express as px
-import datetime
 
 # Title
-st.title("🛡️ Dark Tracer: Early Detection Framework for Malware Activity")
+st.title("🛡️ Dark Tracer: Malware Activity Detection")
 st.write("Detect anomalous spatiotemporal patterns in your data.")
 
 # Sidebar for file upload
-st.sidebar.header("Upload Data")
-uploaded_file = st.sidebar.file_uploader("Upload a CSV file with spatiotemporal data", type=["csv"])
+uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
 
-# Input parameters
-st.sidebar.header("Anomaly Detection Parameters")
-contamination = st.sidebar.slider("Contamination (Anomaly Fraction)", 0.01, 0.5, 0.1)
-n_estimators = st.sidebar.slider("Number of Estimators", 50, 500, 100)
+# Set anomaly detection parameters
+contamination = st.sidebar.slider("Anomaly Fraction", 0.01, 0.5, 0.1)
+n_estimators = st.sidebar.slider("Estimators", 50, 500, 100)
 
-# Load and display data
 if uploaded_file:
-    # Read the uploaded file
-    data = pd.read_csv(uploaded_file)
-    st.write("### Uploaded Data")
-    st.dataframe(data.head())
+    try:
+        # Load and display data
+        data = pd.read_csv(uploaded_file)
+        st.write("### Uploaded Data")
+        st.dataframe(data.head())
 
-    # Expecting columns: timestamp, location (latitude/longitude), and activity
-    if 'timestamp' in data.columns and 'latitude' in data.columns and 'longitude' in data.columns:
-        # Parse timestamp if needed
-        if data['timestamp'].dtype != 'datetime64[ns]':
+        # Ensure required columns exist
+        if {'timestamp', 'latitude', 'longitude'}.issubset(data.columns):
             data['timestamp'] = pd.to_datetime(data['timestamp'])
 
-        # Plot data distribution
-        st.write("### Spatiotemporal Data Distribution")
-        fig = px.scatter_mapbox(
-            data,
-            lat="latitude",
-            lon="longitude",
-            color="activity",
-            hover_data=["timestamp"],
-            title="Activity Distribution",
-            mapbox_style="open-street-map",
-            height=500
-        )
-        st.plotly_chart(fig)
+            # Anomaly detection
+            data['hour'] = data['timestamp'].dt.hour
+            features = data[['latitude', 'longitude', 'hour']]
+            model = IsolationForest(n_estimators=n_estimators, contamination=contamination, random_state=42)
+            data['anomaly'] = model.fit_predict(features)
+            data['anomaly'] = data['anomaly'].apply(lambda x: 'Anomalous' if x == -1 else 'Normal')
 
-        # Feature extraction for anomaly detection
-        st.write("### Anomaly Detection")
-        data['hour'] = data['timestamp'].dt.hour
-        features = data[['latitude', 'longitude', 'hour']]
+            # Visualize anomalies
+            anomalies = data[data['anomaly'] == 'Anomalous']
+            fig = px.scatter_mapbox(
+                anomalies,
+                lat="latitude",
+                lon="longitude",
+                color="anomaly",
+                hover_data=["timestamp"],
+                title="Detected Anomalies",
+                mapbox_style="open-street-map"
+            )
+            st.plotly_chart(fig)
 
-        # Anomaly detection using Isolation Forest
-        model = IsolationForest(n_estimators=n_estimators, contamination=contamination, random_state=42)
-        data['anomaly'] = model.fit_predict(features)
-        data['anomaly'] = data['anomaly'].apply(lambda x: 'Anomalous' if x == -1 else 'Normal')
+            # Export processed data
+            csv_data = data.to_csv(index=False).encode('utf-8')
+            st.sidebar.download_button("Download Processed Data", csv_data, "processed_data.csv", "text/csv")
 
-        # Display anomaly counts
-        st.write("### Anomaly Counts")
-        st.bar_chart(data['anomaly'].value_counts())
+        else:
+            st.error("Data must include 'timestamp', 'latitude', and 'longitude' columns.")
 
-        # Plot anomalies on map
-        st.write("### Detected Anomalies")
-        anomalies = data[data['anomaly'] == 'Anomalous']
-        fig_anomalies = px.scatter_mapbox(
-            anomalies,
-            lat="latitude",
-            lon="longitude",
-            color="anomaly",
-            hover_data=["timestamp"],
-            title="Anomalous Activities",
-            mapbox_style="open-street-map",
-            height=500
-        )
-        st.plotly_chart(fig_anomalies)
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
 
-        # Save processed data
-        st.sidebar.download_button(
-            "Download Processed Data",
-            data.to_csv(index=False).encode('utf-8'),
-            "processed_data.csv",
-            "text/csv"
-        )
-
-    else:
-        st.error("Uploaded data must contain 'timestamp', 'latitude', and 'longitude' columns.")
 else:
-    st.info("Please upload a dataset to begin.")
-
-# Security Best Practices
-st.sidebar.header("Best Practices")
-st.sidebar.write("""
-- Ensure data contains accurate timestamps and geolocations.
-- Monitor anomalies in real time for better detection.
-- Validate and sanitize inputs to prevent vulnerabilities.
-""")
+    st.info("Upload a dataset to begin.")
